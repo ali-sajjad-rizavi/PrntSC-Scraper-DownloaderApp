@@ -125,6 +125,18 @@ class Ui_MainWindow(object):
         self.minimizeToTray_Button.setObjectName("minimizeToTray_Button")
         self.minimizeToTray_Button.clicked.connect(self.__minimize_MainWindow_toTray)
         #---------------------------------------------------------------------------
+        self.stop_Button = QtWidgets.QPushButton(self.centralwidget)
+        self.stop_Button.setGeometry(QtCore.QRect(70, 320, 91, 23))
+        self.stop_Button.setText("Stop")
+        self.stop_Button.setEnabled(False)
+        self.stop_Button.clicked.connect(self.applicationHandle.stop_buttonClick)
+        #
+        self.stopping_label = QtWidgets.QLabel(self.centralwidget)
+        self.stopping_label.setGeometry(QtCore.QRect(170, 320, 91, 21))
+        self.stopping_label.setFont(font)
+        self.stopping_label.setText("")
+        self.stopping_label.setEnabled(False)
+        #---------------------------------------------------------------------------
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QtWidgets.QStatusBar(MainWindow)
         self.statusbar.setObjectName("statusbar")
@@ -200,9 +212,9 @@ class Form(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         self.applicationHandle.is_window_closed = True
+        event.accept()
         if self.applicationHandle.downloader_thread.is_alive():
             self.applicationHandle.downloader_thread.join()
-        event.accept()
 
 #--------#
 ##-MAIN-##
