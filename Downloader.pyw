@@ -1,10 +1,6 @@
 from threading import Thread
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 import requests as REQ
+from bs4 import BeautifulSoup as BS
 import email.utils as eut
 
 from scraper_gui import *
@@ -41,6 +37,20 @@ class MessageBox:
         msg.setWindowIcon(QtGui.QIcon('robot.ico'))
         msg.exec_()
 
+#---------------
+
+my_headers = {
+    'authority': 'prnt.sc',
+    'cache-control': 'max-age=0',
+    'upgrade-insecure-requests': '1',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36',
+    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'accept-encoding': 'gzip, deflate',
+    'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8'
+}
+
+#---------------
+
 
 class Application:
     def __init__(self):
@@ -55,6 +65,7 @@ class Application:
 
     def showWindow(self):
         self.is_window_closed = False
+        self.should_stop = False
         self.MainWindow.show()
         sys.exit(self.app.exec_())
 
@@ -77,6 +88,11 @@ class Application:
             pass
         return False
 
+    def stop_buttonClick(self):
+        self.UI.stop_Button.setEnabled(False)
+        self.UI.stopping_label.setText("Stopping...")
+        self.should_stop = True
+
     def start_DownloaderThread(self):
         if int(self.UI.startNumber_lineEdit.text()) > int(self.UI.endNumber_lineEdit.text()) or int(self.UI.endNumber_lineEdit.text()) > 2176782335:
             MessageBox.showMessage_InvalidRange(self.MainWindow)
@@ -85,6 +101,8 @@ class Application:
             MessageBox.showMessage_SelectFolder(self.MainWindow)
             return
         self.UI.startDownloader_Button.setEnabled(False)
+        self.UI.stop_Button.setEnabled(True)
+        self.should_stop = False
         self.downloader_thread = Thread(target=self.startDownloading)
         self.downloader_thread.start()
 
@@ -92,19 +110,11 @@ class Application:
         start_lineNo = int(self.UI.startNumber_lineEdit.text())
         end_lineNo = int(self.UI.endNumber_lineEdit.text())
         #
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--incognito')
-        chrome_options.add_argument('start-maximized')
-        #
         downloaded_count = 0
         remaining_count = end_lineNo - start_lineNo + 1
-        self.UI.status_label.setText('Status: Opening chrome...')
+        self.UI.status_label.setText('Status: Connecting...')
         self.UI.downloadedCount_label.setText('Downloaded: 0')
         self.UI.remainingCount_label.setText('Remaining: ' + str(remaining_count))
-        #
-        driver = webdriver.Chrome(options=chrome_options)
         self.UI.status_label.setText('Status: Starting the downloads...')
         # E:/file_gen/
         input_file = open('sixchar.csv', 'r')
@@ -116,32 +126,38 @@ class Application:
         self.create_new_folder(folder_name)
         for current_lineNo in range(start_lineNo, end_lineNo + 1):
             if self.is_window_closed == True:
-                driver.quit()
                 input_file.close()
                 return
-            if self.check_internet_connection() == False:
-                driver.quit()
+            #----------STOP--------------
+            if self.should_stop == True:
                 input_file.close()
-                self.UI.showInternetConnectionError()
+                if os.path.isfile('resumeinfo.csv'):
+                    os.remove('resumeinfo.csv')
+                self.folder_count = 0
+                self.UI.stopping_label.setText("")
+                self.UI.startDownloader_Button.setEnabled(True)
+                self.should_stop == False
+                print('Stopped!')
                 return
             #------------------------------------------
             image_name = input_file.readline().strip()
             try:
-                self.UI.status_label.setText('Status: Navigating to https://prnt.sc/' + image_name)
-                driver.get('https://prnt.sc/' + image_name)
-                image_url = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, 'screenshot-image'))).get_attribute('src')
+                self.UI.status_label.setText('Status: GET https://prnt.sc/' + image_name)
+                image_url = BS(REQ.get('https://prnt.sc/' + image_name, headers=my_headers).text, 'html.parser').find('img', {'id':'screenshot-image'})['src']
                 #
                 self.UI.status_label.setText('Status: GET request to image...')
-                response = REQ.get(image_url)
+                response = REQ.get(image_url, headers=my_headers)
                 if not 'image' in response.headers['content-type']:
+                    raise Exception
+                if len(response.content) == 4267:
                     raise Exception
                 image_extension = '.png'
                 if response.headers['content-type'] == 'image/jpg' or response.headers['content-type'] == 'image/jpeg':
                     image_extension = '.jpg'
                 #------------SAVING------------------------
                 if self.validate_Date(response.headers['Last-Modified']) == True:
+                    self.UI.status_label.setText('Status: Saving ' + image_name + image_extension)
                     write_image_bytes(self.UI.dirpath_lineEdit.text() + '/' + folder_name + '/' + image_name + image_extension, response.content)
-                    self.UI.status_label.setText('Status: Saved ' + image_name + image_extension)
                     downloaded_count += 1
                     self.UI.downloadedCount_label.setText('Downloaded: ' + str(downloaded_count))
                     remaining_count -= 1
@@ -163,10 +179,11 @@ class Application:
             writeline_to_resumeinfo_file(str(current_lineNo + 1) + ',' + str(end_lineNo) + ',' + self.UI.dateEdit.date().toString() + ',' + self.UI.dirpath_lineEdit.text() + ',' + str(folder_count + 1))
         #--------------------
         input_file.close()
-        driver.quit()
         os.remove('resumeinfo.csv')
         self.folder_count = folder_count + 1
         self.UI.setNext_SuggestedRange(end_lineNo + 1)
+        print('Finished!')
+        self.should_stop = False
 
 
 #=====================================================================
@@ -177,3 +194,10 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+#if self.check_internet_connection() == False:
+    #driver.quit()
+    #input_file.close()
+    #self.UI.showInternetConnectionError()
+    #return
