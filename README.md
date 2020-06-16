@@ -1,4 +1,4 @@
-# py-ImageScraper-DownloaderApp
+# PrntSc-Scraper-DownloaderApp
 A desktop application which uses static Python web requests to scrape 2.3 Billion images and download from https://prnt.sc domain, and optionally in a specified range.
 
 # Required pip packages
